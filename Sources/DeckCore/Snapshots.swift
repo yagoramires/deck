@@ -2,7 +2,7 @@ import AppKit
 import NeyKit
 import SwiftUI
 
-/// `Deck --snapshots <pasta>`: desenha o popover e as configurações em PNG com teclas de exemplo e sai.
+/// `Deck --snapshots <pasta>`: desenha o popover, a tela e as configurações em PNG com teclas de exemplo e sai.
 /// Usa uma pasta temporária (config e ícones de exemplo), nunca a config de verdade, e não abre o D6.
 enum Snapshots {
     static func run(into folder: URL) {
@@ -23,6 +23,16 @@ enum Snapshots {
                                         ("popover-fifine", nil, deck(connected: false, official: true)),
                                         ("popover-neyhub", 3, deck(accessibility: true, hosted: true))] as [(String, Int?, DeckState)] {
             render(RootView(selected: selected).environmentObject(store).environmentObject(state), to: folder.appendingPathComponent("\(name).png"))
+        }
+        // Tela no tamanho da área do NeyHub com a janela no padrão; a estreita confere o editor embaixo da grade.
+        for (name, selected, state, width, height) in [("screen", 1, deck(), 790.0, 560.0), ("screen-atalho", 5, deck(), 790, 560),
+                                                       ("screen-audio", 4, deck(), 790, 560),
+                                                       ("screen-fifine", 1, deck(connected: false, official: true), 790, 600),
+                                                       ("screen-desconectado", 7, deck(connected: false), 790, 560),
+                                                       ("screen-neyhub-acessibilidade", 5, deck(accessibility: true, hosted: true), 790, 600),
+                                                       ("screen-estreita", 1, deck(), 520, 900)] as [(String, Int, DeckState, CGFloat, CGFloat)] {
+            render(ScreenView(selected: selected).environmentObject(store).environmentObject(state).frame(width: width, height: height),
+                   to: folder.appendingPathComponent("\(name).png"))
         }
         render(SettingsView(version: "0.2.0", hosted: false, presence: Presence(screen: false, menuBar: true), onPresence: { _ in },
                             grant: {}, trusted: { true }), to: folder.appendingPathComponent("settings.png"))

@@ -3,15 +3,17 @@ import NeyKit
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// Uma tecla do D6: o que ela mostra no aparelho.
+/// Uma tecla do D6: o que ela mostra no aparelho. No popover 74 pt; na tela, do tamanho que couber e com o número.
 struct KeyTile: View {
     @EnvironmentObject var store: Store
     let index: Int
     @Binding var selected: Int?
+    var side: CGFloat = 74
+    var numbered = false
     @ViewState var targeted = false
 
     var body: some View {
-        let side: CGFloat = 74, radius: CGFloat = 10
+        let radius = side * 0.14
         ZStack {
             if let key = store.key(index) {
                 Image(nsImage: Render.tile(key, store: store)).resizable().interpolation(.high)
@@ -26,6 +28,11 @@ struct KeyTile: View {
         }
         .frame(width: side, height: side)
         .clipShape(RoundedRectangle(cornerRadius: radius))
+        .overlay(alignment: .topTrailing) {
+            if numbered {
+                Text("\(index + 1)").font(.system(size: 9)).foregroundStyle(Grafite.label).padding(.top, 5).padding(.trailing, 7)
+            }
+        }
         .overlay(
             RoundedRectangle(cornerRadius: radius + 3)
                 .stroke(selected == index ? Grafite.accent : targeted ? Color.white.opacity(0.6) : .clear, lineWidth: 2)
@@ -108,6 +115,17 @@ enum ActionKind: String, CaseIterable, Identifiable {
         }
     }
 
+    /// Rótulo dos campos da ação na tela; nil = ação sem campos.
+    var fieldTitle: String? {
+        switch self {
+        case .app: "App"
+        case .website: "Site"
+        case .hotkey: "Atalho"
+        case .media: "Tecla"
+        case .audio: "Saídas"
+        case .none, .nextPage, .previousPage: nil
+        }
+    }
 }
 
 extension View {
@@ -123,11 +141,14 @@ extension View {
     }
 }
 
-/// Editor de uma tecla, embaixo da grade do popover.
+/// Editor de uma tecla. No popover abre embaixo da grade; na tela (`wide`) fica sempre aberto ao lado,
+/// com as ações em lista. Os dois gravam pelo mesmo `KeyEditor.binding` → `Store.setKey`.
 struct KeyEditor: View {
     @EnvironmentObject var store: Store
     let index: Int
+    var wide = false
     @ViewState var recording: Any?
+    @ViewState var targeted = false
 
     private var key: Binding<Key> { Self.binding(store, index) }
 
@@ -141,7 +162,7 @@ struct KeyEditor: View {
     }
 
     var body: some View {
-        popoverBody
+        Group { if wide { screenBody } else { popoverBody } }
             .onDisappear { stopRecording() }
     }
 
@@ -199,6 +220,90 @@ struct KeyEditor: View {
         .opacity(key.wrappedValue.icon == nil ? 0.4 : 1)
     }
 
+    // MARK: Tela
+
+    private var screenBody: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text("Tecla \(index + 1)").font(.system(size: 13, weight: .bold)).foregroundStyle(Grafite.strong)
+                Spacer()
+                Text("página \(store.page + 1)").font(.system(size: 11)).foregroundStyle(Grafite.muted)
+            }
+            label("Ação")
+            VStack(alignment: .leading, spacing: 3) {
+                ForEach(ActionKind.allCases) { option in
+                    let on = kind.wrappedValue == option
+                    Button { kind.wrappedValue = option } label: {
+                        Text(option.label)
+                            .foregroundStyle(on ? Grafite.strong : Grafite.muted)
+                            .padding(.horizontal, 8).padding(.vertical, 5)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(on ? Grafite.rowOn : .clear, in: RoundedRectangle(cornerRadius: 6))
+                            .overlay(alignment: .leading) { if on { Rectangle().fill(Grafite.accent).frame(width: 2) } }
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityAddTraits(on ? .isSelected : [])
+                }
+            }
+            if let title = kind.wrappedValue.fieldTitle {
+                label(title)
+                fields
+            }
+            label("Ícone e rótulo")
+            HStack(spacing: 10) {
+                drop
+                VStack(alignment: .leading, spacing: 6) {
+                    TextField("Rótulo (opcional)", text: key.title)
+                        .textFieldStyle(.plain)
+                        .foregroundStyle(Grafite.strong)
+                        .fieldBox()
+                    neon
+                }
+            }
+            HStack(spacing: 6) { iconButtons }.padding(.top, 8)
+            HStack { Chip(title: "Limpar tecla") { store.setKey(index, nil) } }.padding(.top, 12)
+        }
+        .font(.system(size: 12))
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Grafite.card, in: RoundedRectangle(cornerRadius: 11))
+        .overlay(RoundedRectangle(cornerRadius: 11).stroke(Grafite.border, lineWidth: 1))
+    }
+
+    /// O ícone atual; clicar escolhe uma imagem, soltar uma imagem do Finder também troca.
+    private var drop: some View {
+        Button { chooseImage(alt: false) } label: {
+            ZStack {
+                if key.wrappedValue.icon != nil || !key.wrappedValue.title.isEmpty {
+                    Image(nsImage: Render.tile(key.wrappedValue, store: store)).resizable().interpolation(.high)
+                } else {
+                    Image(systemName: "photo").font(.system(size: 20)).foregroundStyle(Grafite.label)
+                }
+            }
+            .frame(width: 58, height: 58)
+            .clipShape(RoundedRectangle(cornerRadius: 11))
+            .overlay(RoundedRectangle(cornerRadius: 11).strokeBorder(style: StrokeStyle(lineWidth: 1, dash: [4]))
+                .foregroundStyle(targeted ? Grafite.accent : Grafite.ghostBorder))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help("Escolher imagem, ou solte uma imagem aqui")
+        .accessibilityLabel("Ícone da tecla \(index + 1)")
+        .onDrop(of: [.fileURL], isTargeted: $targeted) { providers in
+            guard let provider = providers.first else { return false }
+            _ = provider.loadObject(ofClass: URL.self) { url, _ in
+                guard let url else { return }
+                DispatchQueue.main.async { store.setIcon(from: url, index: index) }
+            }
+            return true
+        }
+    }
+
+    private func label(_ text: String) -> some View {
+        GSectionLabel(text).padding(.top, 12).padding(.bottom, 6)
+    }
+
     // MARK: Campos de cada ação
 
     @ViewBuilder private var fields: some View {
@@ -211,7 +316,7 @@ struct KeyEditor: View {
                 Spacer()
                 Button("Escolher…") { chooseApp() }.buttonStyle(.plain).foregroundStyle(Grafite.accent)
             }
-            .fieldBox(false)
+            .fieldBox(wide)
         case .website(let url):
             TextField("https://…", text: Binding(get: { url }, set: { key.wrappedValue.action = .website(url: $0) }))
                 .textFieldStyle(.plain)
@@ -226,7 +331,7 @@ struct KeyEditor: View {
                 Button(recording != nil ? "Cancelar" : "Gravar") { recording != nil ? stopRecording() : startRecording() }
                     .buttonStyle(.plain).foregroundStyle(Grafite.accent)
             }
-            .fieldBox(false)
+            .fieldBox(wide)
         case .media(let media):
             Picker("Tecla", selection: Binding(get: { media }, set: { key.wrappedValue.action = .media($0) })) {
                 ForEach(MediaKey.allCases, id: \.self) { Text($0.label).tag($0) }

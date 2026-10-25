@@ -1,6 +1,7 @@
 import AppKit
 import IOKit
 import NeyKit
+import SwiftUI
 
 /// `Deck --selftest`. Sem XCTest (só CommandLineTools). Nunca abre o D6 (a porta HID é um falso), nunca lê nem
 /// grava a config de verdade (pasta temporária), nunca grava no `.standard` (é o domínio do Deck em uso),
@@ -17,6 +18,7 @@ extension DeckApp {
         appStop(folder)
         accessibility(folder)
         popover()
+        screenEditSaves(folder)
     }
 
     /// Suite temporária no lugar do `.standard`; o chamador apaga. Nome fixo: não junta um plist por rodada.
@@ -186,6 +188,21 @@ extension DeckApp {
         precondition(app.deck.popover == hosted && relaunched == 0, "hospedado reiniciou pela casca")
     }
 
+    /// Task 4: editar uma tecla na tela grava o config.json temporário pelo mesmo caminho do popover
+    /// (`KeyEditor.binding` → `Store.setKey` → gravação adiada).
+    static func screenEditSaves(_ folder: URL) {
+        let dir = sampleDir(folder, "screen")
+        let store = Store(dir: dir)
+        _ = NSHostingControllerProbe.render(ScreenView(selected: 7).environmentObject(store).environmentObject(DeckState()))
+        let key = KeyEditor.binding(store, 7)
+        key.wrappedValue.action = .website(url: "https://example.com")
+        key.wrappedValue.title = "Site"
+        spin(0.5)
+        let saved = try! JSONDecoder().decode(Config.self, from: Data(contentsOf: dir.appendingPathComponent("config.json")))
+        precondition(saved.pages[0][7] == Key(action: .website(url: "https://example.com"), title: "Site"), "\(String(describing: saved.pages[0][7]))")
+        precondition(saved.pages[0][0] == store.config.pages[0][0], "a edição mexeu em outra tecla")
+    }
+
     /// Pasta temporária com um config.json pequeno (uma tecla de atalho), pra não cair no import da primeira abertura.
     private static func sampleDir(_ folder: URL, _ name: String) -> URL {
         let dir = folder.appendingPathComponent(name)
@@ -194,6 +211,16 @@ extension DeckApp {
         config.pages[0][0] = Key(action: .hotkey(keyCode: 0, modifiers: 0, label: "A"), title: "A")
         try! JSONEncoder().encode(config).write(to: dir.appendingPathComponent("config.json"))
         return dir
+    }
+}
+
+/// Desenha uma view fora da tela (confere que monta sem travar).
+enum NSHostingControllerProbe {
+    static func render(_ view: some View) -> NSSize {
+        _ = NSApplication.shared
+        let host = NSHostingView(rootView: view.frame(width: 790, height: 560))
+        host.layoutSubtreeIfNeeded()
+        return host.fittingSize
     }
 }
 
