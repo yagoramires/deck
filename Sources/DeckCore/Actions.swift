@@ -47,10 +47,20 @@ enum Perform {
         do { try process.run() } catch { Log.write("open \(arguments) falhou: \(error)") }
     }
 
-    /// Simular teclas exige a permissão de Acessibilidade; na primeira vez o macOS pede.
-    private static func trusted() -> Bool {
-        if AXIsProcessTrusted() { return true }
-        AXIsProcessTrustedWithOptions([kAXTrustedCheckOptionPrompt.takeUnretainedValue(): true] as CFDictionary)
+    /// Dentro do NeyHub a Acessibilidade é a dele: só confere, nunca pede ao sistema.
+    static var hosted = false
+    /// Hospedado sem Acessibilidade: a tela mostra "Precisa de Acessibilidade" com Conceder.
+    static var onUntrusted: () -> Void = {}
+    /// Os dois abaixo só mudam no --selftest (nada de pedido nem de tecla de verdade).
+    static var isTrusted: () -> Bool = { AXIsProcessTrusted() }
+    static var askSystem: () -> Void = {
+        _ = AXIsProcessTrustedWithOptions([kAXTrustedCheckOptionPrompt.takeUnretainedValue(): true] as CFDictionary)
+    }
+
+    /// Simular teclas exige a permissão de Acessibilidade; no avulso, na primeira vez o macOS pede.
+    static func trusted() -> Bool {
+        if isTrusted() { return true }
+        if hosted { onUntrusted() } else { askSystem() }
         Log.write("sem permissão de Acessibilidade")
         return false
     }
@@ -133,8 +143,16 @@ enum Audio {
     }
 
     /// Avisa quando a saída padrão muda (pelo deck ou por fora), pra trocar o ícone da tecla.
-    static func onChange(_ block: @escaping () -> Void) {
+    /// Devolve o que o `removeListener` precisa pra parar.
+    static func onChange(_ block: @escaping () -> Void) -> AudioObjectPropertyListenerBlock {
         var address = address(kAudioHardwarePropertyDefaultOutputDevice)
-        AudioObjectAddPropertyListenerBlock(system, &address, .main) { _, _ in block() }
+        let listener: AudioObjectPropertyListenerBlock = { _, _ in block() }
+        AudioObjectAddPropertyListenerBlock(system, &address, .main, listener)
+        return listener
+    }
+
+    static func removeListener(_ listener: @escaping AudioObjectPropertyListenerBlock) {
+        var address = address(kAudioHardwarePropertyDefaultOutputDevice)
+        AudioObjectRemovePropertyListenerBlock(system, &address, .main, listener)
     }
 }

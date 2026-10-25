@@ -1,148 +1,9 @@
-import ServiceManagement
+import AppKit
+import NeyKit
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// O mesmo que @State. No SDK atual @State virou macro, e o plugin dele só vem com o Xcode;
-/// como o build usa só as CommandLineTools, embrulhamos o State à mão (igual ao Dose).
-@propertyWrapper
-struct ViewState<Value>: DynamicProperty {
-    private var state: State<Value>
-    init(wrappedValue: Value) { state = State(initialValue: wrappedValue) }
-    var wrappedValue: Value {
-        get { state.wrappedValue }
-        nonmutating set { state.wrappedValue = newValue }
-    }
-    var projectedValue: Binding<Value> { state.projectedValue }
-}
-
-struct RootView: View {
-    @EnvironmentObject var store: Store
-    @EnvironmentObject var deck: DeckState
-    @ViewState var selected: Int?
-    @ViewState var confirmDeletePage = false
-    @ViewState var confirmImport = false
-
-    init(selected: Int? = nil) { _selected = ViewState(wrappedValue: selected) }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            header
-            if deck.officialRunning { officialBanner }
-            pageBar
-            grid
-            Divider()
-            if let selected {
-                KeyEditor(index: selected).id("\(store.page)-\(selected)")
-            } else {
-                Text("Clique numa tecla pra configurar. Arraste uma tecla pra trocar de lugar, ou solte uma imagem em cima dela pra virar o ícone.")
-                    .font(.callout).foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            Divider()
-            footer
-        }
-        .padding(14)
-        .frame(width: 470)
-        .onChange(of: store.page) { _, _ in selected = nil }
-    }
-
-    private var header: some View {
-        HStack(spacing: 8) {
-            Circle().fill(deck.connected ? Color.green : Color.secondary).frame(width: 8, height: 8)
-            Text(deck.connected ? "D6 conectado" : "D6 desconectado").font(.headline)
-            Spacer()
-            Image(systemName: "sun.min").foregroundStyle(.secondary)
-            Slider(value: Binding(get: { Double(store.config.brightness) },
-                                  set: { store.config.brightness = Int($0) }), in: 10...100)
-                .frame(width: 110)
-                .help("Brilho das telas")
-            Image(systemName: "sun.max").foregroundStyle(.secondary)
-        }
-    }
-
-    private var officialBanner: some View {
-        HStack {
-            Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.yellow)
-            Text("O app da fifine está aberto e segurando o deck.")
-            Spacer()
-            Button("Fechar ele") { deck.closeOfficial() }
-        }
-        .font(.callout)
-        .padding(8)
-        .background(Color.yellow.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
-    }
-
-    private var pageBar: some View {
-        HStack(spacing: 10) {
-            Button { store.page -= 1 } label: { Image(systemName: "chevron.left") }
-                .disabled(store.page == 0)
-            Text("Página \(store.page + 1) de \(store.config.pages.count)").monospacedDigit()
-            Button { store.page += 1 } label: { Image(systemName: "chevron.right") }
-                .disabled(store.page == store.config.pages.count - 1)
-            Spacer()
-            Button { store.addPage() } label: { Label("Nova página", systemImage: "plus") }
-            Button { confirmDeletePage = true } label: { Image(systemName: "trash") }
-                .disabled(store.config.pages.count == 1)
-                .help("Apagar esta página")
-        }
-        .buttonStyle(.borderless)
-        .alert("Apagar a página \(store.page + 1)?", isPresented: $confirmDeletePage) {
-            Button("Apagar", role: .destructive) { store.removePage() }
-            Button("Cancelar", role: .cancel) {}
-        } message: {
-            Text("As teclas dessa página somem.")
-        }
-    }
-
-    private var grid: some View {
-        VStack(spacing: 8) {
-            ForEach(0..<3, id: \.self) { row in
-                HStack(spacing: 8) {
-                    ForEach(0..<5, id: \.self) { column in
-                        KeyTile(index: row * 5 + column, selected: $selected)
-                    }
-                }
-            }
-        }
-        .padding(10)
-        .frame(maxWidth: .infinity)
-        .background(Color.black.opacity(0.35), in: RoundedRectangle(cornerRadius: 14))
-    }
-
-    private var footer: some View {
-        HStack {
-            LoginToggle()
-            Spacer()
-            Button("Importar do app da fifine") { confirmImport = true }
-                .disabled(Importer.profile() == nil)
-            Button("Sair") { NSApp.terminate(nil) }
-        }
-        .font(.callout)
-        .alert("Importar do app da fifine?", isPresented: $confirmImport) {
-            Button("Importar", role: .destructive) { store.importOfficial() }
-            Button("Cancelar", role: .cancel) {}
-        } message: {
-            Text("Todas as páginas daqui são trocadas pelas do app da fifine.")
-        }
-    }
-}
-
-struct LoginToggle: View {
-    @ViewState var on = SMAppService.mainApp.status == .enabled
-
-    var body: some View {
-        Toggle("Abrir ao iniciar", isOn: Binding(get: { on }, set: { value in
-            do {
-                if value { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() }
-            } catch {
-                Log.write("abrir ao iniciar: \(error)")
-            }
-            on = SMAppService.mainApp.status == .enabled
-        }))
-        .toggleStyle(.checkbox)
-    }
-}
-
+/// Uma tecla do D6: o que ela mostra no aparelho.
 struct KeyTile: View {
     @EnvironmentObject var store: Store
     let index: Int
@@ -150,26 +11,34 @@ struct KeyTile: View {
     @ViewState var targeted = false
 
     var body: some View {
+        let side: CGFloat = 74, radius: CGFloat = 10
         ZStack {
             if let key = store.key(index) {
                 Image(nsImage: Render.tile(key, store: store)).resizable().interpolation(.high)
             } else {
-                RoundedRectangle(cornerRadius: 10)
+                RoundedRectangle(cornerRadius: radius)
+                    .fill(Grafite.card)
+                RoundedRectangle(cornerRadius: radius)
                     .strokeBorder(style: StrokeStyle(lineWidth: 1, dash: [4]))
-                    .foregroundStyle(Color.secondary.opacity(0.5))
-                Image(systemName: "plus").foregroundStyle(.tertiary)
+                    .foregroundStyle(Grafite.ghostBorder)
+                Image(systemName: "plus").foregroundStyle(Grafite.label)
             }
         }
-        .frame(width: 74, height: 74)
-        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .frame(width: side, height: side)
+        .clipShape(RoundedRectangle(cornerRadius: radius))
         .overlay(
-            RoundedRectangle(cornerRadius: 10)
-                .stroke(selected == index ? Color.accentColor : targeted ? Color.white.opacity(0.6) : .clear, lineWidth: 2)
+            RoundedRectangle(cornerRadius: radius + 3)
+                .stroke(selected == index ? Grafite.accent : targeted ? Color.white.opacity(0.6) : .clear, lineWidth: 2)
+                .padding(-3)
         )
         .contentShape(Rectangle())
         .onTapGesture { selected = index }
         .onDrag { NSItemProvider(object: String(index) as NSString) }
         .onDrop(of: [.fileURL, .text], isTargeted: $targeted) { providers in drop(providers) }
+        .accessibilityElement()
+        .accessibilityLabel("Tecla \(index + 1)\(store.key(index).map { $0.title.isEmpty ? "" : ", \($0.title)" } ?? ", vazia")")
+        .accessibilityAddTraits(selected == index ? [.isButton, .isSelected] : .isButton)
+        .accessibilityAction { selected = index }
     }
 
     /// Imagem do Finder vira o ícone; outra tecla arrastada troca de lugar com esta.
@@ -238,40 +107,66 @@ enum ActionKind: String, CaseIterable, Identifiable {
         case .previousPage: .previousPage
         }
     }
+
 }
 
+extension View {
+    /// A caixa de campo do mockup (fundo escuro, borda fina); `on` false deixa como está (popover).
+    @ViewBuilder func fieldBox(_ on: Bool = true) -> some View {
+        if on {
+            padding(.horizontal, 9).padding(.vertical, 7)
+                .background(Grafite.field, in: RoundedRectangle(cornerRadius: 7))
+                .overlay(RoundedRectangle(cornerRadius: 7).stroke(Grafite.border, lineWidth: 1))
+        } else {
+            self
+        }
+    }
+}
+
+/// Editor de uma tecla, embaixo da grade do popover.
 struct KeyEditor: View {
     @EnvironmentObject var store: Store
     let index: Int
     @ViewState var recording: Any?
 
-    private var key: Binding<Key> {
+    private var key: Binding<Key> { Self.binding(store, index) }
+
+    /// A tecla `index` da página atual; mudar grava no config.json (Store).
+    static func binding(_ store: Store, _ index: Int) -> Binding<Key> {
         Binding(get: { store.key(index) ?? Key() }, set: { store.setKey(index, $0) })
     }
 
+    private var kind: Binding<ActionKind> {
+        Binding(get: { ActionKind(key.wrappedValue.action) }, set: { key.wrappedValue.action = $0.empty })
+    }
+
     var body: some View {
+        popoverBody
+            .onDisappear { stopRecording() }
+    }
+
+    private var popoverBody: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .top, spacing: 14) {
                 iconColumn
                 VStack(alignment: .leading, spacing: 8) {
-                    Picker("Ação", selection: Binding(get: { ActionKind(key.wrappedValue.action) },
-                                                      set: { key.wrappedValue.action = $0.empty })) {
+                    Picker("Ação", selection: kind) {
                         ForEach(ActionKind.allCases) { Text($0.label).tag($0) }
                     }
                     fields
                     TextField("Título (opcional)", text: key.title)
+                        .textFieldStyle(.plain)
+                        .foregroundStyle(Grafite.strong)
+                        .fieldBox()
                 }
             }
             HStack {
-                Toggle("Estilo neon no ícone", isOn: key.styled)
-                    .toggleStyle(.checkbox)
-                    .disabled(key.wrappedValue.icon == nil)
+                neon
                 Spacer()
-                Button("Apagar tecla", role: .destructive) { store.setKey(index, nil) }
+                Chip(title: "Apagar tecla") { store.setKey(index, nil) }
             }
-            .font(.callout)
         }
-        .onDisappear { stopRecording() }
+        .font(.system(size: 12))
     }
 
     private var iconColumn: some View {
@@ -280,17 +175,31 @@ struct KeyEditor: View {
                 .resizable()
                 .frame(width: 72, height: 72)
                 .clipShape(RoundedRectangle(cornerRadius: 9))
-            Button("Imagem…") { chooseImage(alt: false) }
-            if case .openApp(let path) = key.wrappedValue.action, !path.isEmpty {
-                Button("Ícone do app") { useAppIcon(path) }
-            }
-            if case .audioToggle = key.wrappedValue.action {
-                Button("Imagem B…") { chooseImage(alt: true) }.help("Aparece quando a saída B está ativa")
-            }
+            iconButtons
         }
-        .controlSize(.small)
         .frame(width: 92)
     }
+
+    @ViewBuilder private var iconButtons: some View {
+        Chip(title: "Imagem…") { chooseImage(alt: false) }
+        if case .openApp(let path) = key.wrappedValue.action, !path.isEmpty {
+            Chip(title: "Ícone do app") { useAppIcon(path) }
+        }
+        if case .audioToggle = key.wrappedValue.action {
+            Chip(title: "Imagem B…") { chooseImage(alt: true) }.help("Aparece quando a saída B está ativa")
+        }
+    }
+
+    private var neon: some View {
+        HStack(spacing: 2) {
+            Text("Estilo neon").foregroundStyle(Grafite.muted)
+            GSwitch(isOn: key.styled, label: "Estilo neon")
+        }
+        .disabled(key.wrappedValue.icon == nil)
+        .opacity(key.wrappedValue.icon == nil ? 0.4 : 1)
+    }
+
+    // MARK: Campos de cada ação
 
     @ViewBuilder private var fields: some View {
         switch key.wrappedValue.action {
@@ -298,20 +207,26 @@ struct KeyEditor: View {
             HStack {
                 Text(path.isEmpty ? "Nenhum app escolhido" : FileManager.default.displayName(atPath: path))
                     .lineLimit(1)
-                    .foregroundStyle(path.isEmpty ? .secondary : .primary)
+                    .foregroundStyle(path.isEmpty ? Grafite.muted : Grafite.strong)
                 Spacer()
-                Button("Escolher…") { chooseApp() }
+                Button("Escolher…") { chooseApp() }.buttonStyle(.plain).foregroundStyle(Grafite.accent)
             }
+            .fieldBox(false)
         case .website(let url):
             TextField("https://…", text: Binding(get: { url }, set: { key.wrappedValue.action = .website(url: $0) }))
+                .textFieldStyle(.plain)
+                .foregroundStyle(Grafite.strong)
+                .fieldBox(true)
         case .hotkey(_, _, let label):
             HStack {
                 Text(recording != nil ? "Aperte o atalho…" : label.isEmpty ? "Nenhum atalho" : label)
                     .monospaced()
-                    .foregroundStyle(label.isEmpty || recording != nil ? .secondary : .primary)
+                    .foregroundStyle(label.isEmpty || recording != nil ? Grafite.muted : Grafite.strong)
                 Spacer()
                 Button(recording != nil ? "Cancelar" : "Gravar") { recording != nil ? stopRecording() : startRecording() }
+                    .buttonStyle(.plain).foregroundStyle(Grafite.accent)
             }
+            .fieldBox(false)
         case .media(let media):
             Picker("Tecla", selection: Binding(get: { media }, set: { key.wrappedValue.action = .media($0) })) {
                 ForEach(MediaKey.allCases, id: \.self) { Text($0.label).tag($0) }

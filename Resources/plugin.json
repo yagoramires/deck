@@ -1,0 +1,7 @@
+{
+  "id": "local.deck",
+  "name": "Deck",
+  "hasScreen": true,
+  "permissions": ["accessibility"],
+  "binary": "libDeckPlugin.dylib"
+}
