@@ -31,22 +31,33 @@ final class D6 {
     private(set) var stopped = false
     /// "Encontrado mas não abriu" vai pro log uma vez só, não a cada 2 s.
     private var reported = false
+    /// Ligado no stop(): a fila de escrita pula o que ainda não saiu, menos o HAN.
+    private let dropping = Flag()
+    /// Quanto o stop() espera a fila antes de fechar assim mesmo.
+    static let stopTimeout: TimeInterval = 1
 
     init(port: HIDPort = IOKitHID()) { self.port = port }
 
     /// Procura o deck a cada 2 s até abrir; o app da fifine segura o dispositivo enquanto estiver aberto.
     func start() {
         stopped = false
+        dropping.set(false)
         timer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in self?.tryOpen() }
         tryOpen()
     }
 
-    /// Desinstalar no NeyHub ou fechar o avulso: o que já estava na fila sai, e o D6 fica livre pro próximo dono.
+    /// Desinstalar no NeyHub ou fechar o avulso: imagens na fila são puladas, o HAN sai se der tempo (até 1 s)
+    /// e o D6 fica livre pro próximo dono.
     func stop() {
         stopped = true
         timer?.invalidate()
         timer = nil
-        flush()
+        dropping.set(true)
+        let drained = DispatchSemaphore(value: 0)
+        writes.async { drained.signal() }
+        if drained.wait(timeout: .now() + Self.stopTimeout) == .timedOut {
+            Log.write("fila do D6 não esvaziou em \(Self.stopTimeout) s; fechando assim mesmo")
+        }
         if isOpen { port.close() }
         isOpen = false
     }
@@ -87,33 +98,34 @@ final class D6 {
 
     // MARK: - Comandos
 
-    func wake() { enqueue([Self.command("DIS")]) }
-    func screenOff() { enqueue([Self.command("HAN")]) }
-    func heartbeat() { enqueue([Self.command("CONNECT")]) }
-    func setBrightness(_ percent: Int) { enqueue([Self.command("LIG", [10: UInt8(clamping: percent)])]) }
+    func wake() { enqueue([[Self.command("DIS")]]) }
+    func screenOff() { enqueue([[Self.command("HAN")]], keep: true) }
+    func heartbeat() { enqueue([[Self.command("CONNECT")]]) }
+    func setBrightness(_ percent: Int) { enqueue([[Self.command("LIG", [10: UInt8(clamping: percent)])]]) }
 
     /// O que o app oficial faz antes de desenhar: modo '2' (conectado) e limpar a tela inteira,
     /// senão fica o degradê de "desconectado" atrás das teclas.
-    func takeOver() { enqueue([Self.command("MOD", [10: 0x32]), Self.command("CLE", [11: 0xff])]) }
+    func takeOver() { enqueue([[Self.command("MOD", [10: 0x32])], [Self.command("CLE", [11: 0xff])]]) }
 
     /// Troca a imagem das teclas (JPEG 112 px, já girado); `nil` apaga a tecla.
     func update(_ keys: [(index: Int, jpeg: Data?)]) {
         guard !keys.isEmpty else { return }
-        var packets: [[UInt8]] = []
+        var groups: [[[UInt8]]] = []
         for (index, jpeg) in keys {
             let slot = UInt8(Self.imageSlot(index))
             guard let jpeg else {
-                packets.append(Self.command("CLE", [11: slot]))
+                groups.append([Self.command("CLE", [11: slot])])
                 continue
             }
             let n = jpeg.count, bytes = [UInt8](jpeg)
-            packets.append(Self.command("BAT") + [UInt8(n >> 24 & 0xff), UInt8(n >> 16 & 0xff), UInt8(n >> 8 & 0xff), UInt8(n & 0xff), slot])
+            var packets = [Self.command("BAT") + [UInt8(n >> 24 & 0xff), UInt8(n >> 16 & 0xff), UInt8(n >> 8 & 0xff), UInt8(n & 0xff), slot]]
             for offset in stride(from: 0, to: n, by: Self.reportSize) {
                 packets.append(Array(bytes[offset..<min(offset + Self.reportSize, n)]))
             }
+            groups.append(packets)
         }
-        packets.append(Self.command("STP"))
-        enqueue(packets)
+        groups.append([Self.command("STP")])
+        enqueue(groups)
     }
 
     /// As imagens contam a partir da linha de baixo; as teclas, da de cima (conferido no aparelho).
@@ -129,18 +141,39 @@ final class D6 {
         return packet
     }
 
-    private func enqueue(_ packets: [[UInt8]]) {
+    /// Cada grupo sai inteiro (um comando, ou o BAT com os dados de uma imagem): parar no meio de uma imagem
+    /// faria o D6 ler o próximo comando como JPEG. Depois do stop() só os grupos com `keep` (o HAN) ainda saem.
+    private func enqueue(_ groups: [[[UInt8]]], keep: Bool = false) {
         guard isOpen, !stopped else { return }
-        writes.async { [port] in
-            for packet in packets {
-                let buffer = packet + [UInt8](repeating: 0, count: max(0, Self.reportSize - packet.count))
-                let result = port.send(buffer)
-                if result != kIOReturnSuccess {
-                    Log.write("envio falhou: 0x\(String(UInt32(bitPattern: result), radix: 16))")
-                    return
+        writes.async { [port, dropping] in
+            for group in groups {
+                if !keep, dropping.isOn { return }
+                for packet in group {
+                    let buffer = packet + [UInt8](repeating: 0, count: max(0, Self.reportSize - packet.count))
+                    let result = port.send(buffer)
+                    if result != kIOReturnSuccess {
+                        Log.write("envio falhou: 0x\(String(UInt32(bitPattern: result), radix: 16))")
+                        return
+                    }
                 }
             }
         }
+    }
+}
+
+/// Bool lido na fila de escrita e ligado no main.
+private final class Flag {
+    private let lock = NSLock()
+    private var value = false
+    var isOn: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return value
+    }
+    func set(_ on: Bool) {
+        lock.lock()
+        value = on
+        lock.unlock()
     }
 }
 
@@ -151,6 +184,11 @@ final class IOKitHID: HIDPort {
     private let lock = NSLock()
     private let input = UnsafeMutablePointer<UInt8>.allocate(capacity: D6.reportSize)
     private var handlers: Handlers?
+
+    deinit {
+        close()
+        input.deallocate()
+    }
 
     private final class Handlers {
         let report: (UnsafeMutablePointer<UInt8>, CFIndex) -> Void
@@ -184,6 +222,7 @@ final class IOKitHID: HIDPort {
         IOHIDDeviceScheduleWithRunLoop(device, CFRunLoopGetMain(), CFRunLoopMode.commonModes.rawValue)
     }
 
+    /// Pode ser chamado de novo (removido, stop, deinit): sem dispositivo não faz nada.
     func close() {
         guard let device = currentDevice() else { return }
         IOHIDDeviceRegisterInputReportCallback(device, input, D6.reportSize, nil, nil)

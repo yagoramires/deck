@@ -15,6 +15,7 @@ extension DeckApp {
         protocolBasics(folder)
         storeLoads(folder)
         d6Stop()
+        d6SlowStop()
         appStop(folder)
         accessibility(folder)
         popover()
@@ -72,8 +73,7 @@ extension DeckApp {
         precondition(try! fm.contentsOfDirectory(atPath: broken.path).contains { $0.hasPrefix("config-ilegivel-") })
     }
 
-    /// Review Focus 1: depois do stop() o D6 está fechado, o timer de 2 s parou, a fila de escrita esvaziou e
-    /// nenhum callback (atrasado) faz nada.
+    /// Review Focus 1: depois do stop() o D6 está fechado, o timer de 2 s parou e nenhum callback (atrasado) faz nada.
     static func d6Stop() {
         let port = FakeHID()
         let d6 = D6(port: port)
@@ -86,10 +86,11 @@ extension DeckApp {
         precondition(keys == 1)
         d6.wake()
         d6.update([(index: 0, jpeg: Data([1, 2, 3])), (index: 1, jpeg: nil)])
+        d6.flush()
         d6.stop()
-        // wake + BAT + dados + CLE + STP: o que estava na fila saiu antes de fechar.
+        // wake + BAT + dados + CLE + STP saíram antes; nada depois de fechar.
         precondition(port.sentCount == 5, "\(port.sentCount)")
-        precondition(!d6.isOpen && port.closes == 1 && !port.listening && port.closedAfterLastSend, "\(port)")
+        precondition(!d6.isOpen && port.closes == 1 && !port.listening && port.closedAfterLastSend && port.rejected == 0, "\(port)")
         precondition(d6.timer == nil)
         port.press(4)
         port.remove()
@@ -110,6 +111,36 @@ extension DeckApp {
         precondition(other.closes == 1, "fechou duas vezes")
     }
 
+    /// stop() com o D6 lento: as imagens que ainda estavam na fila são puladas e o HAN sai por último; se nem ele cabe,
+    /// fecha em ~1 s assim mesmo.
+    static func d6SlowStop() {
+        let han = D6.command("HAN") + [UInt8](repeating: 0, count: D6.reportSize - 8)
+        let image = Data(repeating: 7, count: D6.reportSize * 9) // BAT + 9 pacotes
+        let slow = FakeHID(delay: 0.05)
+        let d6 = D6(port: slow)
+        d6.start()
+        d6.update((0..<5).map { (index: $0, jpeg: image) }) // 51 pacotes, ~2,5 s
+        d6.screenOff()
+        var started = Date()
+        d6.stop()
+        var took = Date().timeIntervalSince(started)
+        precondition(took < 1.2, "stop() levou \(took) s")
+        // No máximo a imagem que já estava saindo (10) + o HAN.
+        precondition(slow.last == han && slow.closedAfterLastSend && slow.rejected == 0 && slow.sentCount <= 11, "\(slow)")
+
+        let stuck = FakeHID(delay: 1.3)
+        let late = D6(port: stuck)
+        late.start()
+        late.update([(index: 0, jpeg: image)])
+        late.screenOff()
+        started = Date()
+        late.stop()
+        took = Date().timeIntervalSince(started)
+        precondition(took >= 0.9 && took < 1.2 && stuck.closes == 1 && !late.isOpen, "stop() levou \(took) s, \(stuck)")
+        late.flush()
+        precondition(stuck.sentCount <= 1, "enviou depois de fechar: \(stuck)")
+    }
+
     /// O DeckApp hospedado: stop() solta o D6 (apaga as telas antes), tira observadores e timers, e não toca no login.
     static func appStop(_ folder: URL) {
         let (d, name) = tempDefaults()
@@ -125,7 +156,7 @@ extension DeckApp {
         let sent = port.sentCount
         precondition(sent > 0, "conectou sem desenhar")
         app.stop()
-        precondition(port.closes == 1 && !port.listening && !app.d6.isOpen && app.d6.timer == nil)
+        precondition(port.closes == 1 && !port.listening && !app.d6.isOpen && app.d6.timer == nil && port.rejected == 0)
         // O HAN (apagar as telas) sai antes de fechar.
         precondition(port.sentCount == sent + 1 && port.last == D6.command("HAN") + [UInt8](repeating: 0, count: D6.reportSize - 8))
         port.press(0)
@@ -225,14 +256,30 @@ enum NSHostingControllerProbe {
 }
 
 /// D6 de mentira: conta o que o D6 pediu e dispara teclas/remoção à mão, mesmo depois do close (callback atrasado).
+/// `delay` por pacote imita um D6 lento. O estado é lido no main e escrito na fila de escrita: fica atrás de um lock.
 final class FakeHID: HIDPort, CustomStringConvertible {
-    var opens = 0, closes = 0, listening = false
+    var opens = 0
+    private let delay: TimeInterval
+    private let lock = NSLock()
     private var report: ((UnsafeMutablePointer<UInt8>, CFIndex) -> Void)?
     private var removal: (() -> Void)?
-    /// Escrito na fila de escrita do D6; lido depois de um flush/stop.
-    private(set) var sentCount = 0
-    private(set) var last: [UInt8] = []
-    private(set) var closedAfterLastSend = false
+    private var state = (closes: 0, listening: false, sent: 0, rejected: 0, last: [UInt8](), closedAfterLastSend: false)
+
+    init(delay: TimeInterval = 0) { self.delay = delay }
+
+    private func locked<T>(_ body: () -> T) -> T {
+        lock.lock()
+        defer { lock.unlock() }
+        return body()
+    }
+
+    var closes: Int { locked { state.closes } }
+    var listening: Bool { locked { state.listening } }
+    var sentCount: Int { locked { state.sent } }
+    /// Envios com o dispositivo já fechado (o IOKit devolve erro).
+    var rejected: Int { locked { state.rejected } }
+    var last: [UInt8] { locked { state.last } }
+    var closedAfterLastSend: Bool { locked { state.closedAfterLastSend } }
 
     func open() -> IOReturn? {
         opens += 1
@@ -240,22 +287,31 @@ final class FakeHID: HIDPort, CustomStringConvertible {
     }
 
     func listen(report: @escaping (UnsafeMutablePointer<UInt8>, CFIndex) -> Void, removed: @escaping () -> Void) {
-        listening = true
+        locked { state.listening = true }
         self.report = report
         removal = removed
     }
 
     func close() {
-        closes += 1
-        listening = false
-        closedAfterLastSend = true
+        locked {
+            state.closes += 1
+            state.listening = false
+            state.closedAfterLastSend = true
+        }
     }
 
+    /// Confere se está aberto na entrada, como um envio que já começou quando o close chega.
     func send(_ packet: [UInt8]) -> IOReturn {
-        precondition(listening, "envio com o dispositivo fechado")
-        sentCount += 1
-        last = packet
-        closedAfterLastSend = false
+        guard listening else {
+            locked { state.rejected += 1 }
+            return kIOReturnNotOpen
+        }
+        if delay > 0 { Thread.sleep(forTimeInterval: delay) }
+        locked {
+            state.sent += 1
+            state.last = packet
+            state.closedAfterLastSend = false
+        }
         return kIOReturnSuccess
     }
 
@@ -269,5 +325,7 @@ final class FakeHID: HIDPort, CustomStringConvertible {
 
     func remove() { removal?() }
 
-    var description: String { "FakeHID(opens: \(opens), closes: \(closes), listening: \(listening), enviados: \(sentCount))" }
+    var description: String {
+        "FakeHID(opens: \(opens), closes: \(closes), listening: \(listening), enviados: \(sentCount), recusados: \(rejected))"
+    }
 }
