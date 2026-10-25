@@ -1,0 +1,7 @@
+.build/
+build/
+dist/
+re/*
+!re/PROTOCOL.md
+!re/decode.py
+!re/probe.swift
