@@ -30,7 +30,8 @@ enum Snapshots {
                                                        ("screen-fifine", 1, deck(connected: false, official: true), 790, 600),
                                                        ("screen-desconectado", 7, deck(connected: false), 790, 560),
                                                        ("screen-neyhub-acessibilidade", 5, deck(accessibility: true, hosted: true), 790, 600),
-                                                       ("screen-estreita", 1, deck(), 520, 900)] as [(String, Int, DeckState, CGFloat, CGFloat)] {
+                                                       ("screen-estreita", 1, deck(), 520, 900),
+                                                       ("screen-neyhub", 1, deck(hosted: true), 898, 580)] as [(String, Int, DeckState, CGFloat, CGFloat)] {
             render(ScreenView(selected: selected).environmentObject(store).environmentObject(state).frame(width: width, height: height),
                    to: folder.appendingPathComponent("\(name).png"))
         }
