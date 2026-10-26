@@ -11,6 +11,7 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/).
 - Configurações (em **Configurações…**, no rodapé do popover): onde o Deck aparece (janela com ícone no Dock, barra de menus ou os dois, sem reiniciar) e o estado da Acessibilidade.
 
 ### Alterado
+- Ícone novo no padrão do NeyHub: o mesmo desenho, em fundo grafite com detalhe verde-limão.
 - Visual no tema Grafite (escuro, acento verde-limão), com a mesma navegação de antes.
 - Se o NeyHub já roda o Deck, o avulso avisa, sai dos itens de login e fecha.
 - Ao fechar (ou desinstalar no NeyHub), o Deck apaga as telas e solta o D6, pra outro app poder abrir.
