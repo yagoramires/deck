@@ -25,10 +25,10 @@ struct ScreenView: View {
                 if wide {
                     HStack(alignment: .top, spacing: 14) {
                         deckColumn(width: inner - 314, height: geometry.size.height - 130 - banners)
-                        ScrollView { editor.padding(.bottom, 20) }.frame(width: 300)
+                        ScrollView(showsIndicators: false) { editor.padding(.bottom, 20) }.frame(width: 300)
                     }
                 } else {
-                    ScrollView {
+                    ScrollView(showsIndicators: false) {
                         VStack(alignment: .leading, spacing: 14) {
                             deckColumn(width: inner, height: .infinity)
                             editor
