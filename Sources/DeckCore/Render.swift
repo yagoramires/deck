@@ -4,7 +4,6 @@ enum Render {
     /// Tamanho de cada tela do D6 em pixels.
     static let size = 112
 
-    /// O que a tecla mostra: ícone (com estilo, se pedido) e o título embaixo.
     static func tile(_ key: Key, store: Store) -> NSImage {
         let side = CGFloat(size)
         let icon = store.image(for: key, alt: showsAlt(key))
@@ -34,7 +33,6 @@ enum Render {
         }
     }
 
-    /// Tecla de áudio mostra o segundo ícone quando o segundo dispositivo é a saída atual.
     static func showsAlt(_ key: Key) -> Bool {
         guard case .audioToggle(_, let second) = key.action else { return false }
         return Audio.defaultOutputUID() == second
@@ -76,7 +74,6 @@ enum IconStyle {
                                    endCenter: CGPoint(x: s / 2, y: s / 2), endRadius: s * 0.6, options: [])
 
         guard let mask = mask(source, side: side) else { return NSImage(cgImage: context.makeImage()!, size: NSSize(width: s, height: s)) }
-        // O logo recortado ocupa ~62% da tecla, centralizado, sem distorcer.
         let fit = CGFloat(glyphSide) / CGFloat(max(mask.width, mask.height))
         let gw = CGFloat(mask.width) * fit, gh = CGFloat(mask.height) * fit
         let glyph = CGRect(x: (s - gw) / 2, y: (s - gh) / 2, width: gw, height: gh)

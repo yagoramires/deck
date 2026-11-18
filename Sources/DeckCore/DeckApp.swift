@@ -287,7 +287,6 @@ public final class DeckApp: NSObject, NSPopoverDelegate {
         }
     }
 
-    /// Conectou ou acordou: liga a tela e manda tudo de novo.
     private func connected() {
         guard d6.isOpen else { return }
         deck.connected = true

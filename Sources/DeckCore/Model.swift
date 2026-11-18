@@ -31,7 +31,6 @@ struct Key: Codable, Equatable {
     /// Arquivo em icons/; `altIcon` aparece quando o segundo dispositivo de áudio está ativo.
     var icon: String?
     var altIcon: String?
-    /// Aplica o estilo neon (IconStyle) ao desenhar.
     var styled = false
     var title = ""
 }

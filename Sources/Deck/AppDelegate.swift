@@ -28,13 +28,11 @@ final class DeckAppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// Grava a config, apaga as telas do D6 e solta o dispositivo antes de sair.
     func applicationWillTerminate(_ notification: Notification) {
         deck?.stop()
         _ = updater?.applyStaged()
     }
 
-    /// Clique no Dock (modo Tela) ou aberto de novo pelo Finder: traz a janela de volta.
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         guard let deck, deck.presence.screen else { return true }
         deck.showScreen()

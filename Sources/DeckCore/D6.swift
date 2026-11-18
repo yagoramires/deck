@@ -64,7 +64,6 @@ final class D6 {
         isOpen = false
     }
 
-    /// Espera a fila de escrita esvaziar.
     func flush() { writes.sync {} }
 
     func tryOpen() {

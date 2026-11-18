@@ -48,7 +48,6 @@ struct KeyTile: View {
         .accessibilityAction { selected = index }
     }
 
-    /// Imagem do Finder vira o ícone; outra tecla arrastada troca de lugar com esta.
     private func drop(_ providers: [NSItemProvider]) -> Bool {
         guard let provider = providers.first else { return false }
         if provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) {
@@ -173,7 +172,6 @@ struct KeyEditor: View {
 
     private var key: Binding<Key> { Self.binding(store, index) }
 
-    /// A tecla `index` da página atual; mudar grava no config.json (Store).
     static func binding(_ store: Store, _ index: Int) -> Binding<Key> {
         Binding(get: { store.key(index) ?? Key() }, set: { store.setKey(index, $0) })
     }
@@ -292,7 +290,6 @@ struct KeyEditor: View {
         .overlay(RoundedRectangle(cornerRadius: 11).stroke(Grafite.border, lineWidth: 1))
     }
 
-    /// O ícone atual; clicar escolhe uma imagem, soltar uma imagem do Finder também troca.
     private var drop: some View {
         Button { chooseImage(alt: false) } label: {
             ZStack {
@@ -403,7 +400,7 @@ struct KeyEditor: View {
     private func startRecording() {
         recording = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
             let modifiers = event.modifierFlags.intersection([.control, .option, .shift, .command])
-            if event.keyCode == 53, modifiers.isEmpty { // Esc sozinho cancela
+            if event.keyCode == 53, modifiers.isEmpty {
                 stopRecording()
                 return nil
             }

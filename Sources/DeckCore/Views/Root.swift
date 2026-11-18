@@ -113,7 +113,6 @@ struct LoginToggle: View {
 
 // MARK: Peças comuns (popover e tela)
 
-/// Ponto e "D6 conectado"/"D6 desconectado".
 struct Status: View {
     @EnvironmentObject var deck: DeckState
     var font: Font = .system(size: 13, weight: .bold)

@@ -14,7 +14,6 @@ struct ScreenView: View {
 
     var body: some View {
         GeometryReader { geometry in
-            // Abaixo disso o editor vai pra baixo da grade.
             let wide = geometry.size.width >= 700
             let inner = geometry.size.width - 44
             let banners = CGFloat((deck.officialRunning ? 1 : 0) + (deck.needsAccessibility ? 1 : 0)) * 48
