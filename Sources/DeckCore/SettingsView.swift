@@ -9,13 +9,13 @@ struct SettingsView: View {
     let presence: Presence?
     let onPresence: (Presence) -> Void
     let grant: () -> Void
-    /// O --snapshots fixa a permissão; senão vem do sistema (só leitura, nunca pede).
+    /// Só leitura, nunca pede; o --snapshots fixa o valor.
     let trusted: () -> Bool
     @ViewState private var shown: Presence
     @ViewState private var granted: Bool
 
     init(version: String, hosted: Bool, presence: Presence?, onPresence: @escaping (Presence) -> Void,
-         grant: @escaping () -> Void, trusted: @escaping () -> Bool = { Perform.isTrusted() }) {
+         grant: @escaping () -> Void, trusted: @escaping () -> Bool) {
         self.version = version; self.hosted = hosted; self.presence = presence; self.onPresence = onPresence
         self.grant = grant; self.trusted = trusted
         _shown = ViewState(wrappedValue: presence ?? Presence(screen: false, menuBar: true))

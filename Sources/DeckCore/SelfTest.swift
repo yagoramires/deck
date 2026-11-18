@@ -167,37 +167,36 @@ extension DeckApp {
 
     /// Hospedado só confere a Acessibilidade (nunca pede ao sistema) e mostra o aviso com Conceder → Permissões do NeyHub.
     static func accessibility(_ folder: URL) {
-        let saved = (Perform.isTrusted, Perform.askSystem, Perform.hosted)
-        defer { (Perform.isTrusted, Perform.askSystem, Perform.hosted) = saved }
         var asked = 0
-        Perform.isTrusted = { false }
-        Perform.askSystem = { asked += 1 }
         let store = Store(dir: folder.appendingPathComponent("ax"))
         store.persist = false
 
         let (d, name) = tempDefaults()
         defer { d.removePersistentDomain(forName: name) }
         let hosted = DeckApp(defaults: d, hosted: true, version: "9.8.7", dir: sampleDir(folder, "ax-hosted"), port: FakeHID())
+        hosted.accessibility.isTrusted = { false }
+        hosted.accessibility.askSystem = { asked += 1 }
         var opened = 0
         hosted.onOpenPermissions = { opened += 1 }
         hosted.start()
         precondition(hosted.deck.needsAccessibility, "config com atalho e sem permissão: sem aviso")
-        Perform.run(.hotkey(keyCode: 0, modifiers: 0, label: "A"), store: store)
-        Perform.run(.media(.mute), store: store)
+        Perform.run(.hotkey(keyCode: 0, modifiers: 0, label: "A"), store: store, accessibility: hosted.accessibility)
+        Perform.run(.media(.mute), store: store, accessibility: hosted.accessibility)
         precondition(asked == 0, "hospedado pediu Acessibilidade ao sistema")
         hosted.deck.grant()
         precondition(opened == 1 && asked == 0)
-        Perform.isTrusted = { true }
+        hosted.accessibility.isTrusted = { true }
         hosted.store.config.brightness = 70
         spin(0.2)
         precondition(!hosted.deck.needsAccessibility, "aviso não sumiu com a permissão")
         hosted.stop()
 
-        // Avulso: igual à 0.1.0, o macOS pede na primeira tecla; nada de aviso.
-        Perform.isTrusted = { false }
+        // Avulso: igual à 0.1.0, o macOS pede na primeira tecla; nada de aviso. A permissão do hospedado não vaza pra ele.
         let alone = DeckApp(defaults: d, hosted: false, version: "9.8.7", dir: sampleDir(folder, "ax-alone"), port: FakeHID())
-        precondition(!Perform.hosted)
-        Perform.run(.hotkey(keyCode: 0, modifiers: 0, label: "A"), store: store)
+        alone.accessibility.isTrusted = { false }
+        alone.accessibility.askSystem = { asked += 1 }
+        precondition(!alone.accessibility.hosted)
+        Perform.run(.hotkey(keyCode: 0, modifiers: 0, label: "A"), store: store, accessibility: alone.accessibility)
         precondition(asked == 1 && !alone.deck.needsAccessibility)
     }
 

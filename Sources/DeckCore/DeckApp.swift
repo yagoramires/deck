@@ -48,6 +48,7 @@ public final class DeckApp: NSObject, NSPopoverDelegate {
     let store: Store
     let deck: DeckState
     let d6: D6
+    let accessibility: Accessibility
     private var statusItem: NSStatusItem?
     private let popover = NSPopover()
     private var outsideClicks: Any?
@@ -79,9 +80,9 @@ public final class DeckApp: NSObject, NSPopoverDelegate {
         store = Store(dir: dir)
         deck = DeckState(popover: PopoverState(version: version, hosted: hosted))
         d6 = D6(port: port)
-        Perform.hosted = hosted
+        accessibility = Accessibility(hosted: hosted)
         super.init()
-        Perform.onUntrusted = { [weak self] in self?.refreshAccessibility(untrusted: true) }
+        accessibility.onUntrusted = { [weak self] in self?.refreshAccessibility(untrusted: true) }
         deck.grant = { [weak self] in self?.grantAccessibility() }
         deck.showSettings = { [weak self] in
             self?.popover.performClose(nil)
@@ -155,7 +156,7 @@ public final class DeckApp: NSObject, NSPopoverDelegate {
         d6.onDisconnect = nil
         d6.onKey = nil
         deck.connected = false
-        Perform.onUntrusted = {}
+        accessibility.onUntrusted = {}
         setMenuBarVisible(false)
         removeOutsideClicks()
         settingsWindow?.close()
@@ -192,7 +193,8 @@ public final class DeckApp: NSObject, NSPopoverDelegate {
                 presence.save(defaults)
                 applyPresence(presence)
             },
-            grant: { [weak self] in self?.grantAccessibility() }))
+            grant: { [weak self] in self?.grantAccessibility() },
+            trusted: { [accessibility] in accessibility.isTrusted() }))
     }
 
     public static func runSnapshots(into folder: URL) { Snapshots.run(into: folder) }
@@ -254,7 +256,7 @@ public final class DeckApp: NSObject, NSPopoverDelegate {
     /// Só conta hospedado: no avulso o macOS pede na primeira tecla, como sempre.
     private func refreshAccessibility(untrusted: Bool = false) {
         guard hosted else { return }
-        let needs = untrusted || (Self.usesAccessibility(store.config) && !Perform.isTrusted())
+        let needs = untrusted || (Self.usesAccessibility(store.config) && !accessibility.isTrusted())
         if deck.needsAccessibility != needs { deck.needsAccessibility = needs }
     }
 
@@ -270,7 +272,7 @@ public final class DeckApp: NSObject, NSPopoverDelegate {
 
     /// Hospedado abre a tela de Permissões do NeyHub; avulso, o pedido do sistema.
     private func grantAccessibility() {
-        if hosted { onOpenPermissions?() } else { Perform.askSystem() }
+        if hosted { onOpenPermissions?() } else { accessibility.askSystem() }
     }
 
     // MARK: D6
@@ -316,7 +318,7 @@ public final class DeckApp: NSObject, NSPopoverDelegate {
     private func pressed(_ index: Int, down: Bool) {
         guard down, let key = store.key(index) else { return }
         Log.write("tecla \(index + 1): \(key.action)")
-        Perform.run(key.action, store: store)
+        Perform.run(key.action, store: store, accessibility: accessibility)
     }
 
     // MARK: Popover

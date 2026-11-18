@@ -2,8 +2,31 @@ import AppKit
 import ApplicationServices
 import CoreAudio
 
+/// A permissão de Acessibilidade de um DeckApp. Fica num objeto (e não em variáveis globais) pra cada DeckApp
+/// e o selftest terem a sua; `isTrusted` e `askSystem` só mudam no --selftest (nada de pedido nem de tecla de verdade).
+final class Accessibility {
+    /// Dentro do NeyHub a Acessibilidade é a dele: só confere, nunca pede ao sistema.
+    let hosted: Bool
+    /// Hospedado sem Acessibilidade: a tela mostra "Precisa de Acessibilidade" com Conceder.
+    var onUntrusted: () -> Void = {}
+    var isTrusted: () -> Bool = { AXIsProcessTrusted() }
+    var askSystem: () -> Void = {
+        _ = AXIsProcessTrustedWithOptions([kAXTrustedCheckOptionPrompt.takeUnretainedValue(): true] as CFDictionary)
+    }
+
+    init(hosted: Bool) { self.hosted = hosted }
+
+    /// Simular teclas exige a permissão de Acessibilidade; no avulso, na primeira vez o macOS pede.
+    func trusted() -> Bool {
+        if isTrusted() { return true }
+        if hosted { onUntrusted() } else { askSystem() }
+        Log.write("sem permissão de Acessibilidade")
+        return false
+    }
+}
+
 enum Perform {
-    static func run(_ action: Action, store: Store) {
+    static func run(_ action: Action, store: Store, accessibility: Accessibility) {
         switch action {
         case .none:
             break
@@ -14,7 +37,7 @@ enum Perform {
             guard !address.isEmpty else { return }
             open([address.contains("://") ? address : "https://" + address])
         case .hotkey(let code, let modifiers, _):
-            guard trusted() else { return }
+            guard accessibility.trusted() else { return }
             let source = CGEventSource(stateID: .hidSystemState)
             for down in [true, false] {
                 let event = CGEvent(keyboardEventSource: source, virtualKey: code, keyDown: down)
@@ -22,7 +45,7 @@ enum Perform {
                 event?.post(tap: .cghidEventTap)
             }
         case .media(let key):
-            guard trusted() else { return }
+            guard accessibility.trusted() else { return }
             media(key)
         case .audioToggle(let first, let second):
             let target = Audio.defaultOutputUID() == first ? second : first
@@ -31,9 +54,9 @@ enum Perform {
                 NSSound.beep()
             }
         case .nextPage:
-            store.page = (store.page + 1) % store.config.pages.count
+            store.turnPage(by: 1, wrapping: true)
         case .previousPage:
-            store.page = (store.page - 1 + store.config.pages.count) % store.config.pages.count
+            store.turnPage(by: -1, wrapping: true)
         }
     }
 
@@ -45,24 +68,6 @@ enum Perform {
         process.arguments = arguments
         process.terminationHandler = { if $0.terminationStatus != 0 { Log.write("open \(arguments) saiu com \($0.terminationStatus)") } }
         do { try process.run() } catch { Log.write("open \(arguments) falhou: \(error)") }
-    }
-
-    /// Dentro do NeyHub a Acessibilidade é a dele: só confere, nunca pede ao sistema.
-    static var hosted = false
-    /// Hospedado sem Acessibilidade: a tela mostra "Precisa de Acessibilidade" com Conceder.
-    static var onUntrusted: () -> Void = {}
-    /// Os dois abaixo só mudam no --selftest (nada de pedido nem de tecla de verdade).
-    static var isTrusted: () -> Bool = { AXIsProcessTrusted() }
-    static var askSystem: () -> Void = {
-        _ = AXIsProcessTrustedWithOptions([kAXTrustedCheckOptionPrompt.takeUnretainedValue(): true] as CFDictionary)
-    }
-
-    /// Simular teclas exige a permissão de Acessibilidade; no avulso, na primeira vez o macOS pede.
-    static func trusted() -> Bool {
-        if isTrusted() { return true }
-        if hosted { onUntrusted() } else { askSystem() }
-        Log.write("sem permissão de Acessibilidade")
-        return false
     }
 
     /// Teclas de mídia são eventos de sistema (NX_KEYTYPE_*), não teclas comuns.
