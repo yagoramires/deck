@@ -47,10 +47,10 @@ struct RootView: View {
 
     private var pageBar: some View {
         HStack(spacing: 10) {
-            Button { store.page -= 1 } label: { Image(systemName: "chevron.left") }
+            Button { store.turnPage(by: -1) } label: { Image(systemName: "chevron.left") }
                 .disabled(store.page == 0)
             Text("Página \(store.page + 1) de \(store.config.pages.count)").monospacedDigit().font(.system(size: 12))
-            Button { store.page += 1 } label: { Image(systemName: "chevron.right") }
+            Button { store.turnPage(by: 1) } label: { Image(systemName: "chevron.right") }
                 .disabled(store.page == store.config.pages.count - 1)
             Spacer()
             Chip(title: "+ Nova página") { store.addPage() }

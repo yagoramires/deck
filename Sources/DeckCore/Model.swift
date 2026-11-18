@@ -84,6 +84,12 @@ final class Store: ObservableObject {
     func setKey(_ index: Int, _ key: Key?) { config.pages[page][index] = key }
     func swap(_ a: Int, _ b: Int) { config.pages[page].swapAt(a, b) }
 
+    /// Os botões das telas desligam nas pontas; as teclas de página dão a volta.
+    func turnPage(by delta: Int, wrapping: Bool = false) {
+        let count = config.pages.count
+        page = wrapping ? (page + delta % count + count) % count : min(max(page + delta, 0), count - 1)
+    }
+
     func addPage() {
         config.pages.insert(Config.emptyPage, at: page + 1)
         page += 1
@@ -110,25 +116,24 @@ final class Store: ObservableObject {
     /// Copia uma imagem pra icons/ e devolve o nome; nil se não for imagem.
     func addIcon(from source: URL) -> String? {
         guard NSImage(contentsOf: source) != nil else { return nil }
-        let name = UUID().uuidString + "." + (source.pathExtension.isEmpty ? "png" : source.pathExtension.lowercased())
-        do {
-            try FileManager.default.copyItem(at: source, to: icons.appendingPathComponent(name))
-            return name
-        } catch {
-            Log.write("copiar ícone falhou: \(error)")
-            return nil
+        return writeIcon(ext: source.pathExtension.isEmpty ? "png" : source.pathExtension.lowercased()) {
+            try FileManager.default.copyItem(at: source, to: $0)
         }
     }
 
     func addIcon(_ image: NSImage) -> String? {
         guard let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil),
               let png = NSBitmapImageRep(cgImage: cg).representation(using: .png, properties: [:]) else { return nil }
-        let name = UUID().uuidString + ".png"
+        return writeIcon(ext: "png") { try png.write(to: $0) }
+    }
+
+    private func writeIcon(ext: String, _ write: (URL) throws -> Void) -> String? {
+        let name = UUID().uuidString + "." + ext
         do {
-            try png.write(to: icons.appendingPathComponent(name))
+            try write(icons.appendingPathComponent(name))
             return name
         } catch {
-            Log.write("salvar ícone falhou: \(error)")
+            Log.write("gravar ícone falhou: \(error)")
             return nil
         }
     }

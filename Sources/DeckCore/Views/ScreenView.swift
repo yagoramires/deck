@@ -71,14 +71,14 @@ struct ScreenView: View {
     /// ‹ Página 1 2 3 › +
     private var pager: some View {
         HStack(spacing: 6) {
-            tab("‹", on: false, help: "Página anterior") { store.page -= 1 }
+            tab("‹", on: false, help: "Página anterior") { store.turnPage(by: -1) }
                 .disabled(store.page == 0)
             ForEach(store.config.pages.indices, id: \.self) { page in
                 tab(page == store.page ? "Página \(page + 1)" : "\(page + 1)", on: page == store.page, help: "Página \(page + 1)") {
                     store.page = page
                 }
             }
-            tab("›", on: false, help: "Próxima página") { store.page += 1 }
+            tab("›", on: false, help: "Próxima página") { store.turnPage(by: 1) }
                 .disabled(store.page == store.config.pages.count - 1)
             tab("+", on: false, help: "Nova página") { store.addPage() }
         }

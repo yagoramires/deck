@@ -52,12 +52,9 @@ struct KeyTile: View {
     private func drop(_ providers: [NSItemProvider]) -> Bool {
         guard let provider = providers.first else { return false }
         if provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) {
-            _ = provider.loadObject(ofClass: URL.self) { url, _ in
-                guard let url else { return }
-                DispatchQueue.main.async {
-                    store.setIcon(from: url, index: index)
-                    selected = index
-                }
+            loadDroppedFile(provider) { url in
+                store.setIcon(from: url, index: index)
+                selected = index
             }
             return true
         }
@@ -69,6 +66,14 @@ struct KeyTile: View {
             }
         }
         return true
+    }
+}
+
+/// Arquivo solto do Finder: entrega a URL no main.
+private func loadDroppedFile(_ provider: NSItemProvider, _ use: @escaping (URL) -> Void) {
+    _ = provider.loadObject(ofClass: URL.self) { url, _ in
+        guard let url else { return }
+        DispatchQueue.main.async { use(url) }
     }
 }
 
@@ -308,10 +313,7 @@ struct KeyEditor: View {
         .accessibilityLabel("Ícone da tecla \(index + 1)")
         .onDrop(of: [.fileURL], isTargeted: $targeted) { providers in
             guard let provider = providers.first else { return false }
-            _ = provider.loadObject(ofClass: URL.self) { url, _ in
-                guard let url else { return }
-                DispatchQueue.main.async { store.setIcon(from: url, index: index) }
-            }
+            loadDroppedFile(provider) { store.setIcon(from: $0, index: index) }
             return true
         }
     }
