@@ -72,6 +72,22 @@ struct KeyTile: View {
     }
 }
 
+/// As teclas do D6 na posição real: linhas de cima pra baixo, número = linha * colunas + coluna.
+struct KeyGrid<Tile: View>: View {
+    let spacing: CGFloat
+    @ViewBuilder let tile: (Int) -> Tile
+
+    var body: some View {
+        VStack(spacing: spacing) {
+            ForEach(0..<D6.rows, id: \.self) { row in
+                HStack(spacing: spacing) {
+                    ForEach(0..<D6.columns, id: \.self) { column in tile(row * D6.columns + column) }
+                }
+            }
+        }
+    }
+}
+
 enum ActionKind: String, CaseIterable, Identifiable {
     case none, app, website, hotkey, media, audio, nextPage, previousPage
     var id: String { rawValue }
@@ -321,7 +337,7 @@ struct KeyEditor: View {
             TextField("https://…", text: Binding(get: { url }, set: { key.wrappedValue.action = .website(url: $0) }))
                 .textFieldStyle(.plain)
                 .foregroundStyle(Grafite.strong)
-                .fieldBox(true)
+                .fieldBox()
         case .hotkey(_, _, let label):
             HStack {
                 Text(recording != nil ? "Aperte o atalho…" : label.isEmpty ? "Nenhum atalho" : label)

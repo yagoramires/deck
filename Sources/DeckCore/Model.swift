@@ -37,7 +37,7 @@ struct Key: Codable, Equatable {
 }
 
 struct Config: Codable, Equatable {
-    static let keys = 15
+    static let keys = D6.keyCount
     var pages: [[Key?]] = [Config.emptyPage]
     var brightness = 80
     static var emptyPage: [Key?] { Array(repeating: nil, count: keys) }
@@ -219,8 +219,8 @@ enum Importer {
     /// linha 0 é a de baixo (conferido com a tela dele).
     static func index(_ position: String) -> Int? {
         let parts = position.split(separator: ",").compactMap { Int($0) }
-        guard parts.count == 2, (0..<5).contains(parts[0]), (0..<3).contains(parts[1]) else { return nil }
-        return (2 - parts[1]) * 5 + parts[0]
+        guard parts.count == 2, (0..<D6.columns).contains(parts[0]), (0..<D6.rows).contains(parts[1]) else { return nil }
+        return D6.mirroredRows(parts[1] * D6.columns + parts[0])
     }
 
     static func key(_ action: [String: Any], dir: URL, store: Store) -> Key {

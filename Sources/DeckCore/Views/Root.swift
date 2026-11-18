@@ -64,15 +64,7 @@ struct RootView: View {
     }
 
     private var grid: some View {
-        VStack(spacing: 8) {
-            ForEach(0..<3, id: \.self) { row in
-                HStack(spacing: 8) {
-                    ForEach(0..<5, id: \.self) { column in
-                        KeyTile(index: row * 5 + column, selected: $selected)
-                    }
-                }
-            }
-        }
+        KeyGrid(spacing: 8) { KeyTile(index: $0, selected: $selected) }
         .padding(10)
         .frame(maxWidth: .infinity)
         .background(Grafite.deck, in: RoundedRectangle(cornerRadius: 14))

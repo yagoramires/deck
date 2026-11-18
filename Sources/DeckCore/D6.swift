@@ -17,6 +17,8 @@ protocol HIDPort: AnyObject {
 /// Teclas são numeradas 0–14 a partir do canto superior esquerdo, linha por linha.
 final class D6 {
     static let vendorID = 0x3142, productID = 0x0007
+    static let columns = 5, rows = 3
+    static let keyCount = columns * rows
     static let reportSize = 512
 
     var onKey: ((Int, Bool) -> Void)?
@@ -92,7 +94,7 @@ final class D6 {
     private func received(_ report: UnsafeMutablePointer<UInt8>, _ length: CFIndex) {
         guard !stopped, length >= 11, report[0] == 0x41, report[1] == 0x43, report[2] == 0x4b else { return }
         let key = Int(report[9])
-        guard (1...15).contains(key) else { return }
+        guard (1...Self.keyCount).contains(key) else { return }
         onKey?(key - 1, report[10] == 1)
     }
 
@@ -128,8 +130,11 @@ final class D6 {
         enqueue(groups)
     }
 
-    /// As imagens contam a partir da linha de baixo; as teclas, da de cima (conferido no aparelho).
-    static func imageSlot(_ index: Int) -> Int { (2 - index / 5) * 5 + index % 5 + 1 }
+    /// Inverte a ordem das linhas, mantendo a coluna: as imagens contam a partir da linha de baixo e as teclas,
+    /// da de cima (conferido no aparelho). Vale nos dois sentidos.
+    static func mirroredRows(_ index: Int) -> Int { (rows - 1 - index / columns) * columns + index % columns }
+
+    static func imageSlot(_ index: Int) -> Int { mirroredRows(index) + 1 }
 
     /// "CRT" + 2 zeros + nome do comando, com bytes extras em posições fixas.
     static func command(_ name: String, _ extra: [Int: UInt8] = [:]) -> [UInt8] {

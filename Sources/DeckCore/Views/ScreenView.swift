@@ -107,15 +107,7 @@ struct ScreenView: View {
         // 18 de margem e 12 entre as teclas; o rodapé fica embaixo.
         let side = max(44, min((width - 36 - 48) / 5, (height - 36 - 24 - 44) / 3))
         return VStack(alignment: .leading, spacing: 12) {
-            VStack(spacing: 12) {
-                ForEach(0..<3, id: \.self) { row in
-                    HStack(spacing: 12) {
-                        ForEach(0..<5, id: \.self) { column in
-                            KeyTile(index: row * 5 + column, selected: $selected, side: side, numbered: true)
-                        }
-                    }
-                }
-            }
+            KeyGrid(spacing: 12) { KeyTile(index: $0, selected: $selected, side: side, numbered: true) }
             .padding(18)
             .frame(maxWidth: .infinity)
             .background(Grafite.deck, in: RoundedRectangle(cornerRadius: 16))

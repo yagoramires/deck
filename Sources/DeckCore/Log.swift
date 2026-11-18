@@ -29,7 +29,3 @@ enum Log {
         }
     }
 }
-
-func debugLog(_ message: @autoclosure () -> String) {
-    Log.write(message())
-}
