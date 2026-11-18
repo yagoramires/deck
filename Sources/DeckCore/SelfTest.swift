@@ -35,6 +35,18 @@ extension DeckApp {
     static func protocolBasics(_ folder: URL) {
         precondition(D6.imageSlot(0) == 11 && D6.imageSlot(4) == 15 && D6.imageSlot(10) == 1 && D6.imageSlot(14) == 5)
         precondition(Importer.index("4,1") == 9 && Importer.index("0,2") == 0 && Importer.index("0,0") == 10 && Importer.index("5,0") == nil)
+        precondition((0..<D6.keyCount).allSatisfy { D6.mirroredRows(D6.mirroredRows($0)) == $0 }, "inversão de linhas não volta ao começo")
+        let pages = Store(dir: folder.appendingPathComponent("pages"))
+        pages.persist = false
+        pages.config.pages = [Config.emptyPage, Config.emptyPage, Config.emptyPage]
+        pages.turnPage(by: -1)
+        precondition(pages.page == 0, "passou da primeira página")
+        pages.turnPage(by: -1, wrapping: true)
+        precondition(pages.page == 2, "não deu a volta pra trás")
+        pages.turnPage(by: 1)
+        precondition(pages.page == 2, "passou da última página")
+        pages.turnPage(by: 1, wrapping: true)
+        precondition(pages.page == 0, "não deu a volta pra frente")
         precondition(D6.command("LIG", [10: 80]) == Array("CRT".utf8) + [0, 0] + Array("LIG".utf8) + [0, 0, 80])
         let key = Key(action: .hotkey(keyCode: 0, modifiers: 1 << 20, label: "⌘A"), title: "x")
         precondition(try! JSONDecoder().decode(Key.self, from: JSONEncoder().encode(key)) == key)
